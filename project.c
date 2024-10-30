@@ -11,13 +11,13 @@ typedef struct person
 
 int rows,cols,N;
 
-#define INFECTED_DURATION 10
+#define INFECTED_DURATION 5
 #define IMMUNE_DURATION 2
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads);
 void start_simulation_serial(int sim_time,int n,int* infection_counter,person* people,int** matr);
 void move_person(person* p,int** matr);
-void print_people(person* people,int n);
+void print_people(person* people,int n,int* infection_counter);
 
 int main(int argc,char* argv[])
 {
@@ -123,35 +123,47 @@ void check_for_infections(person* people,int n,person* p)
         {
             //got one person who is on the same square as the person
             person* p2=&people[i];
-            printf("%d %d\n",p->id,p2->id);
+            
             //check for immunity ; if either of the people are immune, we don't need to check if they can be infected.
             if(p2->init_status>=2 || p->init_status>=2)
                 continue;
             //check for infections for p2 or p
             //if p2 is infected(0)
-            if(p2->init_status==0)
+            if(p2->init_status<=0)
                 {
-                    printf("%d %d\n",p->id,p2->id);
-                    p->init_status=0;
+                    //if the other person on the same space is susceptible, theyu can be infected (set to 0). Only if they are susceptible will the infection counter increase and the other person
+                    //become infected. If both people are already infected, won't increase infection counter or set p->init_status to 0 since that will effectively reset the infected_duration for 
+                    //that other person.
+                    if(p->init_status==1)
+                        {
+                            p->init_status=0;
+                            
+                        }
                 }
-            else if(p->init_status==0)
+            //if p is infected
+            else if(p->init_status<=0)
                 {
-                    printf("%d %d\n",p->id,p2->id);
-                    p2->init_status=0;
+                    if(p2->init_status==1)
+                    {
+                        p2->init_status=0;
+                        
+                    }
                 }
         } 
     }   
 }
 
-void update_infections(person* people, int n) {
+void update_infections(person* people, int n,int* infection_counter) {
     for (int i = 0; i < n; i++) 
     {
+        if(people[i].init_status==0)
+        {
+            infection_counter[people[i].id-1]++;
+        }
         //infected. check if its value is also bigger than the infected duration
         if(people[i].init_status<=0 && people[i].init_status>-INFECTED_DURATION)
         {
-            printf("testing1 %d %d %d\n",people[i].init_status,people[i].id,i);
             people[i].init_status--;
-            printf("testing2 %d %d %d\n\n",people[i].init_status,people[i].id,i);
         }
             
         else if(people[i].init_status==-INFECTED_DURATION)
@@ -164,6 +176,7 @@ void update_infections(person* people, int n) {
         {
             people[i].init_status--;
         }
+        //if people[i] didn't go through any of the ifs, that means that the person is susceptible (1) value ; nothing needs to be changed in this case.
         
 
     }
@@ -175,18 +188,20 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
 {
     while(sim_time>0)
     {
-        printf("\nSimulation %d \n",sim_time);
+        printf("Simulation nr %d\n",sim_time);
         for(int i=0;i<n;i++)
         {
             move_person(&people[i],matr);
             check_for_infections(people,n,&people[i]);
         }
-        update_infections(people,n);
+        update_infections(people,n,infection_counter);
+        print_matrix(matr);
+        print_people(people,n,infection_counter);
         sim_time--;
     }
     printf("\nFinished simulation\n");
     print_matrix(matr);
-    print_people(people,n);
+    print_people(people,n,infection_counter);
 }
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads)
@@ -210,6 +225,8 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
         printf("Error at mem alloc\n");
         return;
     }
+
+    
     int cnt=0;
     //N by N matrix ; values in the matrix will represent the id's of the people
     int** matr=(int**)malloc(sizeof(int*)*rows);
@@ -229,7 +246,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
     }
 
     init_matrix(matr);
-
+    
     fgets(line,FILE_BUFFER_SIZE,f);
     while(fgets(line,FILE_BUFFER_SIZE,f))
     {
@@ -246,8 +263,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
     }
     printf("Initial matrix:\n");
     print_matrix(matr);
-    print_people(people,N);
-    printf("\n");
+
     int* infection_counter=(int*)malloc(sizeof(int)*N);
     if(!infection_counter)
     {
@@ -256,28 +272,43 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
     }
     for(int i=0;i<N;i++)
     {
+        
         infection_counter[i]=0;
     }
+
+    print_people(people,N,infection_counter);
+    printf("\n");
+    
     
     int total_sim_time_conv=atoi(total_sim_time);
     start_simulation_serial(total_sim_time_conv,N,infection_counter,people,matr);
+    for(int i=0;i<rows;i++)
+    {
+        free(matr[i]);
+    }
     free(matr);
     free(people);
     free(infection_counter);
 }
 
-void print_people(person* people,int N)
+void print_people(person* people,int N,int* infection_counter)
 {
     for(int i=0;i<N;i++)
     {
-        printf("Person nr %d: ID:%d CoordX:%d CoordY:%d Status:%d Movement:%d Amp:%d\n",
+        int tmp=people[i].init_status < 0 ? 0 : people[i].init_status;
+        if(tmp>1)
+        {
+            tmp=1;
+        }
+        printf("Person nr %d: ID:%d CoordX:%d CoordY:%d Status:%d Movement:%d Amp:%d Infection Counter:%d\n",
             i+1,
             people[i].id,
             people[i].x,
             people[i].y,
-            people[i].init_status < 0 ? 0 : people[i].init_status,
+            tmp,
             people[i].movement,
-            people[i].amp);
+            people[i].amp,
+            infection_counter[people[i].id-1]);
 
     }   
 }
