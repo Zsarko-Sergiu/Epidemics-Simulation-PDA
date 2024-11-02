@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <pthread.h>
 
 #define FILE_BUFFER_SIZE 256
 
@@ -16,6 +17,7 @@ int rows,cols,N;
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads);
 void start_simulation_serial(int sim_time,int n,int* infection_counter,person* people,int** matr);
+void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr,int nr_threads);
 void move_person(person* p,int** matr);
 void print_people(person* people,int n,int* infection_counter);
 
@@ -204,6 +206,32 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
     print_people(people,n,infection_counter);
 }
 
+void *simulate(void* t)
+{
+    // int i;
+    int my_id = *(int *)t;
+    printf("Hello from thread nr %d\n",my_id);
+    pthread_exit(NULL);
+}
+
+void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr,int nr_threads)
+{
+    pthread_t* threads=(pthread_t*)malloc(sizeof(pthread_t) * nr_threads);
+    int* ids=(int*)malloc(sizeof(int) * nr_threads);
+    for(int i=0;i<nr_threads;i++)
+    {
+        ids[i]=i;
+        pthread_create(&threads[i],NULL,simulate,(int*)&ids[i]);
+    }
+
+    for(int i=0;i<nr_threads;i++)
+    {
+        pthread_join(threads[i],NULL);
+    }
+
+    pthread_exit(NULL);
+}
+
 void initialize(char* total_sim_time,char* file_name,char* nr_threads)
 {
     FILE* f=fopen(file_name,"r");
@@ -279,9 +307,13 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
     print_people(people,N,infection_counter);
     printf("\n");
     
-    
     int total_sim_time_conv=atoi(total_sim_time);
+    int nr_threads_conv=atoi(nr_threads);
+
     start_simulation_serial(total_sim_time_conv,N,infection_counter,people,matr);
+
+    start_simulation_parallel(total_sim_time_conv,N,infection_counter,people,matr,nr_threads_conv);
+
     for(int i=0;i<rows;i++)
     {
         free(matr[i]);
