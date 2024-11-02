@@ -229,7 +229,7 @@ void *simulate(void* t) {
     person_thread* my_thread=(person_thread*)t;
     printf("\n\nHello from thread nr %d ; start:%d end:%d\n", my_thread->id, my_thread->first + 1, my_thread->last + 1);
 
-    int sim_time_threads=sim_time;  // Each thread has its own simulation time
+    int sim_time_threads=sim_time;  //each thread has its own simulation time
 
     while(sim_time_threads>0) {
 
