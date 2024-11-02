@@ -33,6 +33,9 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
 void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr);
 void move_person(person* p,int** matr);
 void print_people(person* people,int n,int* infection_counter);
+void copy_vector(int* infection_counter_serial,int* infection_counter);
+void copy_people(person* people_serial,person* people);
+void copy_matrix(int** matr_serial,int** matr);
 
 int main(int argc,char* argv[])
 {
@@ -321,6 +324,38 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     pthread_exit(NULL);
 }
 
+void copy_vector(int* infection_counter_serial,int* infection_counter)
+{
+    printf("%d\n",N);
+    
+    for(int i=0;i<N;i++)
+    {
+        printf("%d\n",i);
+        infection_counter_serial[i]=infection_counter[i];
+    }
+    printf("test\n");
+}
+
+void copy_people(person* people_serial,person* people)
+{
+    printf("testing\n");
+    for(int i=0;i<N;i++)
+    {
+        people_serial[i]=people[i];
+    }
+}
+
+void copy_matrix(int** matr_serial,int** matr)
+{
+    for(int i=0;i<rows;i++)
+    {
+        for(int j=0;j<cols;j++)
+        {
+            matr_serial[i][j]=matr[i][j];
+        }
+    }
+}
+
 void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 {
     FILE* f=fopen(file_name,"r");
@@ -381,6 +416,32 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     printf("Initial matrix:\n");
     print_matrix(matr);
 
+    int** matr_reset=(int**)malloc(sizeof(int*)*rows);
+    if(!matr_reset)
+    {
+        printf("error allocating memory for matrix 2\n");
+        return;
+    }
+    for(int i=0;i<rows;i++)
+    {
+        matr_reset[i]=(int*)malloc(sizeof(int) * cols);
+        if(!matr_reset[i])
+        {
+            printf("Error; ran out of memory allocating matrix 1\n");
+            return;
+        }
+    }
+
+    person* people_reset=(person*)malloc(sizeof(person) * N);
+    if(!people_reset)
+    {
+        printf("Error at mem alloc\n");
+        return;
+    }
+
+    copy_people(people_reset,people);
+    copy_matrix(matr_reset,matr);
+
     infection_counter=(int*)malloc(sizeof(int)*N);
     if(!infection_counter)
     {
@@ -399,13 +460,51 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     sim_time=atoi(total_sim_time);
     nr_threads=atoi(nr_threads_str);
 
-    //start_simulation_serial(sim_time,N,infection_counter,people,matr);
+    int* infection_counter_serial=(int*)malloc(sizeof(int)*N);
+    if(!infection_counter_serial)
+    {
+        printf("Error allocating memory\n");
+    }
+    int** matr_serial=(int**)malloc(sizeof(int*)*rows);
+    for(int i=0;i<rows;i++)
+    {
+        matr_serial[i]=(int*)malloc(sizeof(int) * cols);
+        if(!matr[i])
+        {
+            printf("Error; ran out of memory allocating matrix 1\n");
+            return;
+        }
+    }
+    person* people_serial=(person*)malloc(sizeof(person)*N);
+
+    start_simulation_serial(sim_time,N,infection_counter,people,matr);
+
 
     //store the values for matr,infection counter and people somewhere and reset the values to work on the parallel version.
     
-        //copy_vector(infection_counter_serial,infection_counter);
-        //copy_matrix(matr_serial,matr);
-        //copy_people(people_serial,people);
+        copy_vector(infection_counter_serial,infection_counter);
+        
+        copy_matrix(matr_serial,matr);
+        
+        copy_people(people_serial,people);
+        
+
+    print_matrix(matr_serial);
+    print_people(people_serial,N,infection_counter_serial);
+
+    //reset the values in matr,people and infection_counter
+
+    copy_people(people,people_reset);
+    copy_matrix(matr,matr_reset);
+
+    for(int i=0;i<N;i++)
+    {
+        infection_counter[i]=0;
+    }
+
+    print_matrix(matr);
+
+    //can finally start simulation for parallel.
 
     start_simulation_parallel(sim_time,N,infection_counter,people,matr);
 
