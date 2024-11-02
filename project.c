@@ -10,14 +10,21 @@ typedef struct person
     int id,x,y,init_status,movement,amp;
 }person;
 
-int rows,cols,N;
+typedef struct person_thread
+{
+    int id,first,last;
+}person_thread;
+
+int rows,cols,N,sim_time,nr_threads;
+person* people;
+int* infection_counter;
 
 #define INFECTED_DURATION 5
 #define IMMUNE_DURATION 2
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads);
 void start_simulation_serial(int sim_time,int n,int* infection_counter,person* people,int** matr);
-void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr,int nr_threads);
+void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr);
 void move_person(person* p,int** matr);
 void print_people(person* people,int n,int* infection_counter);
 
@@ -209,30 +216,69 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
 void *simulate(void* t)
 {
     // int i;
-    int my_id = *(int *)t;
-    printf("Hello from thread nr %d\n",my_id);
-    pthread_exit(NULL);
+    person_thread* my_thread=(person_thread*)t;
+    printf("\n\nHello from thread nr %d ; start:%d end:%d\n",my_thread->id,my_thread->first+1,my_thread->last+1);
+    //start selecting the people from the struct array ; go from the start of the thread(first) to the end(last) 
+    
+    for(int i=my_thread->first;i<=my_thread->last;i++)
+    {
+        
+        int tmp=people[i].init_status < 0 ? 0 : people[i].init_status;
+        if(tmp>1)
+        {
+            tmp=1;
+        }
+        printf("Person nr %d: ID:%d CoordX:%d CoordY:%d Status:%d Movement:%d Amp:%d Infection Counter:%d\n",
+            i+1,
+            people[i].id,
+            people[i].x,
+            people[i].y,
+            tmp,
+            people[i].movement,
+            people[i].amp,
+            infection_counter[people[i].id-1]);
+        
+    }
+    pthread_exit(NULL); 
 }
 
-void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr,int nr_threads)
+void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr)
 {
     pthread_t* threads=(pthread_t*)malloc(sizeof(pthread_t) * nr_threads);
-    int* ids=(int*)malloc(sizeof(int) * nr_threads);
+    person_thread* people_threads=(person_thread*)malloc(sizeof(person_thread) * nr_threads);
+    if(nr_threads>N)
+    {
+        printf("There are more threads than people. Exiting.\n");
+        return;
+    }
+
+    //divide the N people to nr_threads
+    int thread_people=N/nr_threads;
+    int rest=N%nr_threads;
+    printf("Each Thread contains %d people: Rest:%d\n",thread_people,rest);
+    
+    int tmp=0;
+
     for(int i=0;i<nr_threads;i++)
     {
-        ids[i]=i;
-        pthread_create(&threads[i],NULL,simulate,(int*)&ids[i]);
+        people_threads[i].id=i;
+        people_threads[i].first=tmp;
+        int people_for_this_thread = thread_people + (i < rest ? 1 : 0);
+        people_threads[i].last = tmp + people_for_this_thread - 1; 
+        pthread_create(&threads[i],NULL,simulate,(person_thread*)&people_threads[i]);
+        tmp+=people_for_this_thread;
     }
 
     for(int i=0;i<nr_threads;i++)
     {
         pthread_join(threads[i],NULL);
     }
-
+    free(people_threads);
+    free(threads);
     pthread_exit(NULL);
 }
 
-void initialize(char* total_sim_time,char* file_name,char* nr_threads)
+void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 {
     FILE* f=fopen(file_name,"r");
     if(!f)
@@ -247,7 +293,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
     fscanf(f,"%d",&N);
 
     //allocate dynamically both people array and matrix for bigger values.
-    person* people=(person*)malloc(sizeof(person) * N);
+    people=(person*)malloc(sizeof(person) * N);
     if(!people)
     {
         printf("Error at mem alloc\n");
@@ -292,7 +338,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
     printf("Initial matrix:\n");
     print_matrix(matr);
 
-    int* infection_counter=(int*)malloc(sizeof(int)*N);
+    infection_counter=(int*)malloc(sizeof(int)*N);
     if(!infection_counter)
     {
         printf("Error allocating memory for infection counter\n");
@@ -307,12 +353,12 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads)
     print_people(people,N,infection_counter);
     printf("\n");
     
-    int total_sim_time_conv=atoi(total_sim_time);
-    int nr_threads_conv=atoi(nr_threads);
+    sim_time=atoi(total_sim_time);
+    nr_threads=atoi(nr_threads_str);
 
-    start_simulation_serial(total_sim_time_conv,N,infection_counter,people,matr);
+    start_simulation_serial(sim_time,N,infection_counter,people,matr);
 
-    start_simulation_parallel(total_sim_time_conv,N,infection_counter,people,matr,nr_threads_conv);
+    start_simulation_parallel(sim_time,N,infection_counter,people,matr);
 
     for(int i=0;i<rows;i++)
     {
