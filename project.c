@@ -18,6 +18,12 @@ typedef struct person_thread
 int rows,cols,N,sim_time,nr_threads;
 person* people;
 int* infection_counter;
+int** matr;
+
+//barriers for synch
+pthread_barrier_t barrier_move;
+pthread_barrier_t barrier_check;
+pthread_barrier_t barrier_update;
 
 #define INFECTED_DURATION 5
 #define IMMUNE_DURATION 2
@@ -201,6 +207,10 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
         for(int i=0;i<n;i++)
         {
             move_person(&people[i],matr);
+            
+        }
+        for(int i=0;i<n;i++)
+        {
             check_for_infections(people,n,&people[i]);
         }
         update_infections(people,n,infection_counter);
@@ -213,34 +223,52 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
     print_people(people,n,infection_counter);
 }
 
-void *simulate(void* t)
-{
-    // int i;
+
+//simulate function
+void *simulate(void* t) {
     person_thread* my_thread=(person_thread*)t;
-    printf("\n\nHello from thread nr %d ; start:%d end:%d\n",my_thread->id,my_thread->first+1,my_thread->last+1);
-    //start selecting the people from the struct array ; go from the start of the thread(first) to the end(last) 
-    
-    for(int i=my_thread->first;i<=my_thread->last;i++)
-    {
-        
-        int tmp=people[i].init_status < 0 ? 0 : people[i].init_status;
-        if(tmp>1)
+    printf("\n\nHello from thread nr %d ; start:%d end:%d\n", my_thread->id, my_thread->first + 1, my_thread->last + 1);
+
+    int sim_time_threads=sim_time;  // Each thread has its own simulation time
+
+    while(sim_time_threads>0) {
+
+        printf("Thread %d executing simulation nr %d\n",my_thread->id,sim_time_threads);
+
+
+        //move people
+        for (int i=my_thread->first;i<=my_thread->last;i++) 
         {
-            tmp=1;
+            move_person(&people[i],matr);
         }
-        printf("Person nr %d: ID:%d CoordX:%d CoordY:%d Status:%d Movement:%d Amp:%d Infection Counter:%d\n",
-            i+1,
-            people[i].id,
-            people[i].x,
-            people[i].y,
-            tmp,
-            people[i].movement,
-            people[i].amp,
-            infection_counter[people[i].id-1]);
-        
+        printf("Thread %d waiting at barrier move\n",my_thread->id);
+        pthread_barrier_wait(&barrier_move);
+
+
+        //check for infections
+        for (int i=my_thread->first;i<=my_thread->last;i++) 
+        {
+            check_for_infections(people, N, &people[i]);
+        }
+        printf("Thread %d waiting at barrier check\n",my_thread->id);
+        pthread_barrier_wait(&barrier_check);
+
+
+        //update infections
+        update_infections(people,N,infection_counter);
+        printf("Thread %d waiting at barrier update\n",my_thread->id);
+        pthread_barrier_wait(&barrier_update);
+
+
+        //decrease sim time for the thread
+        sim_time_threads--;
+
+        printf("Thread %d decremented its sim_time to %d\n",my_thread->id,sim_time_threads);
     }
-    pthread_exit(NULL); 
+
+    pthread_exit(NULL);
 }
+
 
 void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr)
 {
@@ -251,6 +279,11 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
         printf("There are more threads than people. Exiting.\n");
         return;
     }
+
+    //initialize barriers
+    pthread_barrier_init(&barrier_move,NULL,nr_threads);
+    pthread_barrier_init(&barrier_check,NULL,nr_threads);
+    pthread_barrier_init(&barrier_update,NULL,nr_threads);
 
     //divide the N people to nr_threads
     int thread_people=N/nr_threads;
@@ -263,8 +296,8 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     {
         people_threads[i].id=i;
         people_threads[i].first=tmp;
-        int people_for_this_thread = thread_people + (i < rest ? 1 : 0);
-        people_threads[i].last = tmp + people_for_this_thread - 1; 
+        int people_for_this_thread=thread_people+(i<rest ? 1 : 0);
+        people_threads[i].last = tmp+people_for_this_thread-1; 
         pthread_create(&threads[i],NULL,simulate,(person_thread*)&people_threads[i]);
         tmp+=people_for_this_thread;
     }
@@ -273,6 +306,16 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     {
         pthread_join(threads[i],NULL);
     }
+
+    printf("\nFinished simulation\n");
+    print_matrix(matr);
+    print_people(people,N,infection_counter);
+
+    //clean up barriers
+    pthread_barrier_destroy(&barrier_move);
+    pthread_barrier_destroy(&barrier_check);
+    pthread_barrier_destroy(&barrier_update);
+
     free(people_threads);
     free(threads);
     pthread_exit(NULL);
@@ -303,7 +346,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     
     int cnt=0;
     //N by N matrix ; values in the matrix will represent the id's of the people
-    int** matr=(int**)malloc(sizeof(int*)*rows);
+    matr=(int**)malloc(sizeof(int*)*rows);
     if(!matr)
     {
         printf("error allocating memory for matrix 2\n");
@@ -356,7 +399,13 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     sim_time=atoi(total_sim_time);
     nr_threads=atoi(nr_threads_str);
 
-    start_simulation_serial(sim_time,N,infection_counter,people,matr);
+    //start_simulation_serial(sim_time,N,infection_counter,people,matr);
+
+    //store the values for matr,infection counter and people somewhere and reset the values to work on the parallel version.
+    
+        //copy_vector(infection_counter_serial,infection_counter);
+        //copy_matrix(matr_serial,matr);
+        //copy_people(people_serial,people);
 
     start_simulation_parallel(sim_time,N,infection_counter,people,matr);
 
