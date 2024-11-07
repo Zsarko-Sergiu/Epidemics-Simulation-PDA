@@ -3,6 +3,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <string.h>
+#include <time.h>
 
 #define FILE_BUFFER_SIZE 256
 
@@ -16,18 +17,28 @@ typedef struct person_thread
     int id,first,last;
 }person_thread;
 
+//main values used in the program.
 int rows,cols,N,sim_time,nr_threads;
 person* people;
 int* infection_counter;
 int** matr;
+
+//files for output and debugging
+FILE* f2;
+FILE* f3;
+int choice;
+
+//time structures
+struct timespec start,finish;
+double elapsed,Tserial,Tparallel;
 
 //barriers for synch
 pthread_barrier_t barrier_move;
 pthread_barrier_t barrier_check;
 pthread_barrier_t barrier_update;
 
-#define INFECTED_DURATION 5
-#define IMMUNE_DURATION 2
+#define INFECTED_DURATION 2
+#define IMMUNE_DURATION 11
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads);
 void start_simulation_serial(int sim_time,int n,int* infection_counter,person* people,int** matr);
@@ -37,6 +48,7 @@ void print_people(person* people,int n,int* infection_counter);
 void copy_vector(int* infection_counter_serial,int* infection_counter);
 void copy_people(person* people_serial,person* people);
 void copy_matrix(int** matr_serial,int** matr);
+void write_vars_to_file(person* people,FILE* out);
 
 int main(int argc,char* argv[])
 {
@@ -207,7 +219,7 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
 {
     while(sim_time>0)
     {
-        printf("Simulation nr %d\n",sim_time);
+        // printf("Simulation nr %d\n",sim_time);
         for(int i=0;i<n;i++)
         {
             move_person(&people[i],matr);
@@ -218,26 +230,36 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
             check_for_infections(people,n,&people[i]);
         }
         update_infections(people,n,infection_counter);
-        print_matrix(matr);
-        print_people(people,n,infection_counter);
+        // print_matrix(matr);
+        // print_people(people,n,infection_counter);
+        if(choice==1)
+        {
+            write_vars_to_file(people,f2);
+            fprintf(f2,"\n");
+        }
+        
         sim_time--;
     }
-    printf("\nFinished simulation\n");
-    print_matrix(matr);
-    print_people(people,n,infection_counter);
+    if(choice==0)
+    {
+        write_vars_to_file(people,f2);
+    }
+    // printf("\nFinished simulation\n");
+    // print_matrix(matr);
+    // print_people(people,n,infection_counter);
 }
 
 
 //simulate function
 void *simulate(void* t) {
     person_thread* my_thread=(person_thread*)t;
-    printf("\n\nHello from thread nr %d ; start:%d end:%d\n", my_thread->id, my_thread->first + 1, my_thread->last + 1);
+    // printf("\n\nHello from thread nr %d ; start:%d end:%d\n", my_thread->id, my_thread->first + 1, my_thread->last + 1);
 
     int sim_time_threads=sim_time;  //each thread has its own simulation time
 
     while(sim_time_threads>0) {
 
-        printf("Thread %d executing simulation nr %d\n",my_thread->id,sim_time_threads);
+        // printf("Thread %d executing simulation nr %d\n",my_thread->id,sim_time_threads);
 
 
         //move people
@@ -245,7 +267,7 @@ void *simulate(void* t) {
         {
             move_person(&people[i],matr);
         }
-        printf("Thread %d waiting at barrier move\n",my_thread->id);
+        // printf("Thread %d waiting at barrier move\n",my_thread->id);
         pthread_barrier_wait(&barrier_move);
 
 
@@ -254,7 +276,7 @@ void *simulate(void* t) {
         {
             check_for_infections(people, N, &people[i]);
         }
-        printf("Thread %d waiting at barrier check\n",my_thread->id);
+        // printf("Thread %d waiting at barrier check\n",my_thread->id);
         pthread_barrier_wait(&barrier_check);
 
 
@@ -263,14 +285,21 @@ void *simulate(void* t) {
         //every time a thread is executed. You need to update the infections of every person only once.
         if(my_thread->id==0)
             update_infections(people,N,infection_counter);
-        printf("Thread %d waiting at barrier update\n",my_thread->id);
+        // printf("Thread %d waiting at barrier update\n",my_thread->id);
         pthread_barrier_wait(&barrier_update);
 
-
+        //will only print the results when the thread is the main thread executing the function ; due to racing between the threads, the output shown will most likely differ at each step from the serial version
+        //but the final result will be the same
+        if(choice==1 && my_thread->id==0)
+        {
+            write_vars_to_file(people,f3);
+            fprintf(f3,"\n");
+        }
+        
         //decrease sim time for the thread
         sim_time_threads--;
 
-        printf("Thread %d decremented its sim_time to %d\n",my_thread->id,sim_time_threads);
+        // printf("Thread %d decremented its sim_time to %d\n",my_thread->id,sim_time_threads);
     }
 
     pthread_exit(NULL);
@@ -295,7 +324,7 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     //divide the N people to nr_threads
     int thread_people=N/nr_threads;
     int rest=N%nr_threads;
-    printf("Each Thread contains %d people: Rest:%d\n",thread_people,rest);
+    // printf("Each Thread contains %d people: Rest:%d\n",thread_people,rest);
     
     int tmp=0;
 
@@ -314,9 +343,13 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
         pthread_join(threads[i],NULL);
     }
 
-    printf("\nFinished simulation\n");
-    print_matrix(matr);
-    print_people(people,N,infection_counter);
+    if(choice==0)
+    {
+        write_vars_to_file(people,f3);
+    }
+    // printf("\nFinished simulation\n");
+    // print_matrix(matr);
+    // print_people(people,N,infection_counter);
 
     //clean up barriers
     pthread_barrier_destroy(&barrier_move);
@@ -330,19 +363,19 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
 
 void copy_vector(int* infection_counter_serial,int* infection_counter)
 {
-    printf("%d\n",N);
+    // printf("%d\n",N);
     
     for(int i=0;i<N;i++)
     {
-        printf("%d\n",i);
+        // printf("%d\n",i);
         infection_counter_serial[i]=infection_counter[i];
     }
-    printf("test\n");
+    // printf("test\n");
 }
 
 void copy_people(person* people_serial,person* people)
 {
-    printf("testing\n");
+    // printf("testing\n");
     for(int i=0;i<N;i++)
     {
         people_serial[i]=people[i];
@@ -365,18 +398,82 @@ void write_vars_to_file(person* people,FILE* out)
     for(int i=0;i<N;i++)
     {
         int tmp=people[i].init_status < 0 ? 0 : people[i].init_status;
-        fprintf(out," ID:%d CoordX:%d CoordY:%d Status:%d Infection Counter:%d\n",
+        char* status;
+        if(tmp==0)
+        {
+            status="Infected (1)";
+        }
+        if(tmp==1)
+        {
+            status="Susceptible (0)";
+        }
+        if(tmp>1)
+        {
+            status="Immune (>1)";
+        }
+        fprintf(out," ID:%d CoordX:%d CoordY:%d Status:%s Infection Counter:%d\n",
             people[i].id,
             people[i].x,
             people[i].y,
-            tmp,
+            status,
             infection_counter[people[i].id-1]);
 
     }   
 }
 
+int check_results_people(person* people_serial)
+{
+    int result=1;
+    for(int i=0;i<N;i++)
+    {
+        if(
+            people_serial[i].amp!=people[i].amp || 
+            people_serial[i].id!=people[i].id || 
+            people_serial[i].init_status!=people[i].init_status || 
+            people_serial[i].x!=people[i].x || 
+            people_serial[i].y!=people[i].y || 
+            people_serial[i].movement!=people[i].movement
+        )
+            {
+                printf("Error ; people differ: %d\n",i);
+                result=0;
+            }
+            
+    }
+    return result;
+}
+
+
+
+int check_results_infection(int* infection_counter_serial)
+{
+    int result=1;
+    for(int i=0;i<N;i++)
+    {
+        if(infection_counter_serial[i]!=infection_counter[i])
+        {
+            printf("Error ; infections differ : %d\n",i);
+            result=0;;
+        }
+    }
+    return result;
+}
+
+void check_results(person* people_serial,int** matr_serial,int* infection_counter_serial)
+{
+    //NOTE: Here you only check for the people and the infections. You don't check for the matrix also since for higher number of threads, the results will most likely differ.
+    //At the end, you will have some people that will be at the same position lets say a person with id nr 1, nr 6 and nr 7. In the serial version, the person there will be for example the person
+    //with id nr 1 or 6 or 7 while in the parallel version, there can also be those values. The values in the matrix do not account for overlap. Because of this, only the x and y coordinates of the
+    //people in the people array will only be accounted for in terms of coordinates.
+    if(check_results_people(people_serial) && check_results_infection(infection_counter_serial))
+    {
+        printf("Values in serial and parallel are the same.\n");
+    }
+}
+
 void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 {
+
     FILE* f=fopen(file_name,"r");
     if(!f)
     {
@@ -388,6 +485,12 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     char line[FILE_BUFFER_SIZE];
     fgets(line,FILE_BUFFER_SIZE,f);
     fscanf(f,"%d",&N);
+
+    printf("Welcome. Select your preffered mode:\n 0 -> Normal mode (evolution of each person not printed)\n 1 -> Debug mode: (evolution of each person printed.)\n");
+
+    scanf("%d",&choice);
+
+    // printf("%d\n",choice);
 
     //allocate dynamically both people array and matrix for bigger values.
     people=(person*)malloc(sizeof(person) * N);
@@ -432,8 +535,8 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         matr[people[cnt].x][people[cnt].y]=people[cnt].id;
         cnt++;
     }
-    printf("Initial matrix:\n");
-    print_matrix(matr);
+    // printf("Initial matrix:\n");
+    // print_matrix(matr);
 
     int** matr_reset=(int**)malloc(sizeof(int*)*rows);
     if(!matr_reset)
@@ -473,8 +576,8 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         infection_counter[i]=0;
     }
 
-    print_people(people,N,infection_counter);
-    printf("\n");
+    // print_people(people,N,infection_counter);
+    // printf("\n");
     
     sim_time=atoi(total_sim_time);
     nr_threads=atoi(nr_threads_str);
@@ -507,12 +610,21 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     strcat(path_serial,"_serial_out.txt");
     strcat(path_parallel,"_parallel_out.txt");
 
-    printf("\n\n\n\nFILE PATH\n%s %s\n",path_serial,path_parallel);
+    // printf("\n\n\n\nFILE PATH\n%s %s\n",path_serial,path_parallel);
 
-    FILE* f2 = fopen(path_serial,"w");
-    FILE* f3 = fopen(path_parallel,"w");
+    f2 = fopen(path_serial,"w");
+    f3 = fopen(path_parallel,"w");
 
+    //serial
+    //start:
+    clock_gettime(CLOCK_MONOTONIC,&start);
     start_simulation_serial(sim_time,N,infection_counter,people,matr);
+    clock_gettime(CLOCK_MONOTONIC,&finish);
+
+    elapsed=(finish.tv_sec-start.tv_sec);
+    elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
+    Tserial=elapsed;
+    printf("SERIAL:%lf\n",Tserial);
 
 
 
@@ -524,7 +636,8 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         
         copy_people(people_serial,people);
         
-    write_vars_to_file(people_serial,f2);
+    // write_vars_to_file(people_serial,f2);
+    // printf("%d\n",matr_serial[0][0]);
     // print_matrix(matr_serial);
     // print_people(people_serial,N,infection_counter_serial);
 
@@ -542,12 +655,27 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     //can finally start simulation for parallel.
 
+    clock_gettime(CLOCK_MONOTONIC,&start);
     start_simulation_parallel(sim_time,N,infection_counter,people,matr);
+    clock_gettime(CLOCK_MONOTONIC,&finish);
 
-    print_matrix(matr);
-    print_people(people,N,infection_counter);
+    elapsed=(finish.tv_sec-start.tv_sec);
+    elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
+    Tparallel=elapsed;
+    printf("PARALLEL:%lf\n",elapsed);
 
-    write_vars_to_file(people,f3);
+    double efficiency1=Tserial/(nr_threads*Tparallel);
+    double speedup1=efficiency1*nr_threads;
+
+    printf("Efficiency: %lf\nSpeedup: %lf\n",efficiency1,speedup1);
+
+    // print_matrix(matr);
+    // printf("%d\n",matr[0][0]);
+    // print_people(people,N,infection_counter);
+
+    // write_vars_to_file(people,f3);
+
+    check_results(people_serial,matr_serial,infection_counter_serial);
 
     for(int i=0;i<rows;i++)
     {
