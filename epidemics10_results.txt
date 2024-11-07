@@ -1,0 +1,6 @@
+nr simulations:5
+nr threads:10
+SERIAL:0.000014
+PARALLEL:0.001748
+Efficiency: 0.000798
+Speedup: 0.007976

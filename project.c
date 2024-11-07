@@ -599,8 +599,10 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     }
     person* people_serial=(person*)malloc(sizeof(person)*N);
 
-    char* path_serial=(char*)malloc(sizeof(char) * (strlen(file_name)+16));
-    char* path_parallel=(char*)malloc(sizeof(char)* (strlen(file_name)+16));
+    //_serial_out.txt -> 12 characters (leave 1 for '/0')
+    //_parallel_out.txt -> 14 characters (leave 1 for '/0')
+    char* path_serial=(char*)malloc(sizeof(char) * (strlen(file_name)+12));
+    char* path_parallel=(char*)malloc(sizeof(char)* (strlen(file_name)+14));
 
     strcpy(path_serial,file_name);
     path_serial=strtok(path_serial,".txt");
@@ -610,11 +612,19 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     strcat(path_serial,"_serial_out.txt");
     strcat(path_parallel,"_parallel_out.txt");
 
+    char* results_file=(char*)malloc(sizeof(char)*(strlen(file_name)+9));
+    strcpy(results_file,file_name);
+    results_file=strtok(results_file,".txt");
+    strcat(results_file,"_results.txt");
+    
+
     // printf("\n\n\n\nFILE PATH\n%s %s\n",path_serial,path_parallel);
 
     f2 = fopen(path_serial,"w");
     f3 = fopen(path_parallel,"w");
+    FILE* f4=fopen(results_file,"w");
 
+    fprintf(f4,"nr simulations:%d\nnr threads:%d\n",sim_time,nr_threads);
     //serial
     //start:
     clock_gettime(CLOCK_MONOTONIC,&start);
@@ -624,7 +634,9 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
     Tserial=elapsed;
-    printf("SERIAL:%lf\n",Tserial);
+    fprintf(f4,"SERIAL:%lf\n",Tserial);
+
+    
 
 
 
@@ -662,12 +674,12 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
     Tparallel=elapsed;
-    printf("PARALLEL:%lf\n",elapsed);
+    fprintf(f4,"PARALLEL:%lf\n",elapsed);
 
     double efficiency1=Tserial/(nr_threads*Tparallel);
     double speedup1=efficiency1*nr_threads;
 
-    printf("Efficiency: %lf\nSpeedup: %lf\n",efficiency1,speedup1);
+    fprintf(f4,"Efficiency: %lf\nSpeedup: %lf\n",efficiency1,speedup1);
 
     // print_matrix(matr);
     // printf("%d\n",matr[0][0]);
