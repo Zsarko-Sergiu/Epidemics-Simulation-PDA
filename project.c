@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <pthread.h>
+#include <string.h>
 
 #define FILE_BUFFER_SIZE 256
 
@@ -258,7 +259,10 @@ void *simulate(void* t) {
 
 
         //update infections
-        update_infections(people,N,infection_counter);
+        //since we are updating the infections for all of the people in the structure array, let only one of the threads update the infections. Don't update the infections for every thread, 
+        //every time a thread is executed. You need to update the infections of every person only once.
+        if(my_thread->id==0)
+            update_infections(people,N,infection_counter);
         printf("Thread %d waiting at barrier update\n",my_thread->id);
         pthread_barrier_wait(&barrier_update);
 
@@ -319,9 +323,9 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     pthread_barrier_destroy(&barrier_check);
     pthread_barrier_destroy(&barrier_update);
 
-    free(people_threads);
-    free(threads);
-    pthread_exit(NULL);
+    // free(people_threads);
+    // free(threads);
+    // pthread_exit(NULL);
 }
 
 void copy_vector(int* infection_counter_serial,int* infection_counter)
@@ -354,6 +358,21 @@ void copy_matrix(int** matr_serial,int** matr)
             matr_serial[i][j]=matr[i][j];
         }
     }
+}
+
+void write_vars_to_file(person* people,FILE* out)
+{
+    for(int i=0;i<N;i++)
+    {
+        int tmp=people[i].init_status < 0 ? 0 : people[i].init_status;
+        fprintf(out," ID:%d CoordX:%d CoordY:%d Status:%d Infection Counter:%d\n",
+            people[i].id,
+            people[i].x,
+            people[i].y,
+            tmp,
+            infection_counter[people[i].id-1]);
+
+    }   
 }
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
@@ -477,7 +496,24 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     }
     person* people_serial=(person*)malloc(sizeof(person)*N);
 
+    char* path_serial=(char*)malloc(sizeof(char) * (strlen(file_name)+16));
+    char* path_parallel=(char*)malloc(sizeof(char)* (strlen(file_name)+16));
+
+    strcpy(path_serial,file_name);
+    path_serial=strtok(path_serial,".txt");
+    
+    strcpy(path_parallel,file_name);
+    path_parallel=strtok(path_parallel,".txt");
+    strcat(path_serial,"_serial_out.txt");
+    strcat(path_parallel,"_parallel_out.txt");
+
+    printf("\n\n\n\nFILE PATH\n%s %s\n",path_serial,path_parallel);
+
+    FILE* f2 = fopen(path_serial,"w");
+    FILE* f3 = fopen(path_parallel,"w");
+
     start_simulation_serial(sim_time,N,infection_counter,people,matr);
+
 
 
     //store the values for matr,infection counter and people somewhere and reset the values to work on the parallel version.
@@ -488,9 +524,9 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         
         copy_people(people_serial,people);
         
-
-    print_matrix(matr_serial);
-    print_people(people_serial,N,infection_counter_serial);
+    write_vars_to_file(people_serial,f2);
+    // print_matrix(matr_serial);
+    // print_people(people_serial,N,infection_counter_serial);
 
     //reset the values in matr,people and infection_counter
 
@@ -502,11 +538,16 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         infection_counter[i]=0;
     }
 
-    print_matrix(matr);
+    // print_matrix(matr);
 
     //can finally start simulation for parallel.
 
     start_simulation_parallel(sim_time,N,infection_counter,people,matr);
+
+    print_matrix(matr);
+    print_people(people,N,infection_counter);
+
+    write_vars_to_file(people,f3);
 
     for(int i=0;i<rows;i++)
     {
@@ -522,10 +563,10 @@ void print_people(person* people,int N,int* infection_counter)
     for(int i=0;i<N;i++)
     {
         int tmp=people[i].init_status < 0 ? 0 : people[i].init_status;
-        if(tmp>1)
-        {
-            tmp=1;
-        }
+        // if(tmp>1)
+        // {
+        //     tmp=1;
+        // }
         printf("Person nr %d: ID:%d CoordX:%d CoordY:%d Status:%d Movement:%d Amp:%d Infection Counter:%d\n",
             i+1,
             people[i].id,
