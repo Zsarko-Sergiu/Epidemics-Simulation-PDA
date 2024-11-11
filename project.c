@@ -92,7 +92,7 @@ void move_person(person* p,int** matr)
     {
         //y decrease, x stays same
         int new_y=p->y-p->amp;
-        if(new_y<=0)
+        if(new_y<0)
         {
             new_y=0;
             p->movement=2;
@@ -119,21 +119,6 @@ void move_person(person* p,int** matr)
     if(direction==1)
     {
         //x decrease, y stays same
-        int new_x=p->x-p->amp;
-        if(new_x<=0)
-        {
-            new_x=0;
-            p->movement=0;
-        }
-        matr[p->x][p->y]=0;
-        // printf("%d %d\n",new_x,p->id);
-        matr[new_x][p->y]=p->id;
-        p->x=new_x;
-    }
-    //up
-    if(direction==0)
-    {
-        //x decrease, y stays same
         int new_x=p->x+p->amp;
         if(new_x>=rows)
         {
@@ -141,6 +126,21 @@ void move_person(person* p,int** matr)
             p->movement=1;
         }
         matr[p->x][p->y]=0;
+        matr[new_x][p->y]=p->id;
+        p->x=new_x;
+    }
+    //up
+    if(direction==0)
+    {
+        //x decrease, y stays same
+        int new_x=p->x-p->amp;
+        if(new_x<0)
+        {
+            new_x=0;
+            p->movement=0;
+        }
+        matr[p->x][p->y]=0;
+        // printf("%d %d\n",new_x,p->id);
         matr[new_x][p->y]=p->id;
         p->x=new_x;
     }
@@ -288,8 +288,7 @@ void *simulate(void* t) {
         // printf("Thread %d waiting at barrier update\n",my_thread->id);
         pthread_barrier_wait(&barrier_update);
 
-        //will only print the results when the thread is the main thread executing the function ; due to racing between the threads, the output shown will most likely differ at each step from the serial version
-        //but the final result will be the same
+        
         if(choice==1 && my_thread->id==0)
         {
             write_vars_to_file(people,f3);
