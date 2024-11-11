@@ -43,7 +43,7 @@ Input output:
         -These values are saved in seperate files each for the version of implementation (serial or parallel)
         -Reset the values back to the initial values after performing serial version
         -After reseting the values, start performing parallel version.
-        -If the name of the file was f.txt then the name of output files will be f_serial.txt ; f_parallel.txt
+        -If the name of the file was f.txt then the name of output files will be f_serial_out.txt ; f_parallel_out.txt
         -If debug was chose as 1, evolution of each person across the simulation will be printed. If debug was 0, only the final result of each person 
         will be printed.
         -Besides these two files, an additional output file will be created that will save the time it took to execute the two versions as well as speedup and
@@ -103,8 +103,8 @@ Serial implementation:
         -take each person in people array, move each person.
         -check infections for each person in people array
         -update people array (again, we update the whole arrray of people directly, we don't update each individual)
-        -if debug was 1, then here we print the values in the f_serial.txt output file
-    -after finishing simulation, if debug was 0, write only the final result in the f_serial.txt file.
+        -if debug was 1, then here we print the values in the f_serial_out.txt output file
+    -after finishing simulation, if debug was 0, write only the final result in the f_serial_out.txt file.
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -124,7 +124,7 @@ Parallel implementation:
     -after doing this, create the thread and simulate for that value.
     -after that, remodify the value in tmp to tmp+people per thread. This assures that the next thread will have the first value as the next value from last thread (first_thread1 = last_thread2+1)
     -after simulating for each thread, join them to get the result.
-    -if debug was 0, write only the final result in f_parallel.txt.
+    -if debug was 0, write only the final result in f_parallel_out.txt.
     -destroy barriers to free the memory.
 
     PARALLEL SIMULATION EXPLAINED:
@@ -144,6 +144,38 @@ Parallel implementation:
         
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-    
-
 Discussion regarding speedup,efficiency:
+    
+    Implementation:
+        -start measuring time elapsed from beginning of execution of algorithm, both serial and parallel. 
+        -in the algorithm, when writing the final values in the output files, another clock will begin that will get the time it took to write those values.
+        -the final values for Tserial and Tparallel will be the time it took to execute their respective algorithm - the time it took to write the final values to the output file.
+        -efficiency is computed using formula : efficiency=Tserial/(nr_threads*Tparallel)
+        -speedup is computed using formula : speedup=efficiency*nr_threads;
+        -as mentioned in the input/output part, these values are not printed on the screen, they are written in a specific file create for the program.
+    
+    Discussion:
+        -for the discussion ill take into consideration two input files : epidemics10.txt and epidemics10K.txt (10 nr of people, 10K nr of people)
+            
+            -for epidemics10.txt:
+                -nr simulations:5 ; nr threads:10 ; SERIAL:0.000011 ; PARALLEL:0.002196 ; Efficiency: 0.000498 ; Speedup: 0.004976
+                -nr simulations:5 ; nr threads:2 ; SERIAL:0.000016 ; PARALLEL:0.000811 ; Efficiency: 0.010489 ; Speedup: 0.020977
+                -nr simulations:5 ; nr threads:5 ; SERIAL:0.000015 ; PARALLEL:0.001497 ; Efficiency: 0.002058 ; Speedup: 0.010291
+                -nr simulations:5 ; nr threads:7 ; SERIAL:0.000011 ; PARALLEL:0.002244 ; Efficiency: 0.000783 ; Speedup: 0.005484
+
+                -overall, serial version performs better than parallel no matter how many threads are given.
+
+            -for epidemics10K.txt:
+                -nr simulations:5 ; nr threads:2 ; SERIAL:2.206294 ; PARALLEL:1.241106 ; Efficiency: 0.910046 ; Speedup: 1.820093
+                -nr simulations:5 ; nr threads:5 ; SERIAL:2.267069 ; PARALLEL:0.550330 ; Efficiency: 0.875572 ; Speedup: 4.377860
+                -nr simulations:5 ; nr threads:10 ; SERIAL:2.306438 ; PARALLEL:0.462241 ; Efficiency: 0.538002 ; Speedup: 5.380018
+                -nr simulations:5 ; nr threads:100 ; SERIAL:2.310847 ; PARALLEL:0.391671 ; Efficiency: 0.064634 ; Speedup: 6.463381
+                -nr simulations:5 ; nr threads:250 ; SERIAL:2.296568 ; PARALLEL:0.416665 ; Efficiency: 0.023940 ; Speedup: 5.985115
+                -nr simulations:5 ; nr threads:1000 ; SERIAL:2.212474 ; PARALLEL:0.695585 ; Efficiency: 0.003339 ; Speedup: 3.339127
+                -nr simulations:5 ; nr threads:5000 ;SERIAL:2.280444 ;PARALLEL:5.367058 ; Efficiency: 0.000086 ; Speedup: 0.427775
+                
+                -overall, the parallel version performs better than the serial version. The cases where the serial version performs better seem to be cases where the thread number is way too high which leads to overhead. 
+                -Too low of a number of threads will lead to a smaller speedup. Too high of a nr of threads also does that, and may even lead to the serial version being better than the parallel one.
+                -a medium value will perform the best (haven't tested for the "perfect value" but 100 threads seems to perform the best out of the nr of threads)
+
+            -overall it seems that for a small number of people, the serial version will perform the best and parallel version will never outperform it, while for a large number of people, you need to keep testing and experimenting with the number of threads to find the best value

@@ -30,7 +30,8 @@ int choice;
 
 //time structures
 struct timespec start,finish;
-double elapsed,Tserial,Tparallel;
+struct timespec start_output,finish_output;
+double elapsed,Tserial,Tparallel,elapsed_output;
 
 //barriers for synch
 pthread_barrier_t barrier_move;
@@ -240,10 +241,15 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
         
         sim_time--;
     }
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if(choice==0)
     {
         write_vars_to_file(people,f2);
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
+
     // printf("\nFinished simulation\n");
     // print_matrix(matr);
     // print_people(people,n,infection_counter);
@@ -341,14 +347,19 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     {
         pthread_join(threads[i],NULL);
     }
-
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if(choice==0)
     {
         write_vars_to_file(people,f3);
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
     // printf("\nFinished simulation\n");
     // print_matrix(matr);
     // print_people(people,N,infection_counter);
+
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
+    
 
     //clean up barriers
     pthread_barrier_destroy(&barrier_move);
@@ -632,7 +643,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
-    Tserial=elapsed;
+    Tserial=elapsed-elapsed_output;
     fprintf(f4,"SERIAL:%lf\n",Tserial);
 
     
@@ -672,7 +683,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
-    Tparallel=elapsed;
+    Tparallel=elapsed-elapsed_output;
     fprintf(f4,"PARALLEL:%lf\n",elapsed);
 
     double efficiency1=Tserial/(nr_threads*Tparallel);
