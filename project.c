@@ -30,7 +30,8 @@ int choice;
 
 //time structures
 struct timespec start,finish;
-double elapsed,Tserial,Tparallel;
+struct timespec start_output,finish_output;
+double elapsed,Tserial,Tparallel,elapsed_output;
 
 //barriers for synch
 pthread_barrier_t barrier_move;
@@ -92,7 +93,7 @@ void move_person(person* p,int** matr)
     {
         //y decrease, x stays same
         int new_y=p->y-p->amp;
-        if(new_y<=0)
+        if(new_y<0)
         {
             new_y=0;
             p->movement=2;
@@ -119,21 +120,6 @@ void move_person(person* p,int** matr)
     if(direction==1)
     {
         //x decrease, y stays same
-        int new_x=p->x-p->amp;
-        if(new_x<=0)
-        {
-            new_x=0;
-            p->movement=0;
-        }
-        matr[p->x][p->y]=0;
-        // printf("%d %d\n",new_x,p->id);
-        matr[new_x][p->y]=p->id;
-        p->x=new_x;
-    }
-    //up
-    if(direction==0)
-    {
-        //x decrease, y stays same
         int new_x=p->x+p->amp;
         if(new_x>=rows)
         {
@@ -141,6 +127,21 @@ void move_person(person* p,int** matr)
             p->movement=1;
         }
         matr[p->x][p->y]=0;
+        matr[new_x][p->y]=p->id;
+        p->x=new_x;
+    }
+    //up
+    if(direction==0)
+    {
+        //x decrease, y stays same
+        int new_x=p->x-p->amp;
+        if(new_x<0)
+        {
+            new_x=0;
+            p->movement=0;
+        }
+        matr[p->x][p->y]=0;
+        // printf("%d %d\n",new_x,p->id);
         matr[new_x][p->y]=p->id;
         p->x=new_x;
     }
@@ -240,10 +241,15 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
         
         sim_time--;
     }
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if(choice==0)
     {
         write_vars_to_file(people,f2);
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
+
     // printf("\nFinished simulation\n");
     // print_matrix(matr);
     // print_people(people,n,infection_counter);
@@ -288,8 +294,7 @@ void *simulate(void* t) {
         // printf("Thread %d waiting at barrier update\n",my_thread->id);
         pthread_barrier_wait(&barrier_update);
 
-        //will only print the results when the thread is the main thread executing the function ; due to racing between the threads, the output shown will most likely differ at each step from the serial version
-        //but the final result will be the same
+        
         if(choice==1 && my_thread->id==0)
         {
             write_vars_to_file(people,f3);
@@ -342,14 +347,19 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     {
         pthread_join(threads[i],NULL);
     }
-
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if(choice==0)
     {
         write_vars_to_file(people,f3);
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
     // printf("\nFinished simulation\n");
     // print_matrix(matr);
     // print_people(people,N,infection_counter);
+
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
+    
 
     //clean up barriers
     pthread_barrier_destroy(&barrier_move);
@@ -633,7 +643,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
-    Tserial=elapsed;
+    Tserial=elapsed-elapsed_output;
     fprintf(f4,"SERIAL:%lf\n",Tserial);
 
     
@@ -673,7 +683,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
-    Tparallel=elapsed;
+    Tparallel=elapsed-elapsed_output;
     fprintf(f4,"PARALLEL:%lf\n",elapsed);
 
     double efficiency1=Tserial/(nr_threads*Tparallel);
