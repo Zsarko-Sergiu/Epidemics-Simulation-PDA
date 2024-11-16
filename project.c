@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
+#include <omp.h>
 
 #define FILE_BUFFER_SIZE 256
 
@@ -26,6 +27,8 @@ int** matr;
 //files for output and debugging
 FILE* f2;
 FILE* f3;
+FILE* f_pragma_v1;
+FILE* f_pragma_v2;
 int choice;
 
 //time structures
@@ -39,6 +42,7 @@ pthread_barrier_t barrier_update;
 
 #define INFECTED_DURATION 2
 #define IMMUNE_DURATION 11
+#define CHUNK_SIZE 20
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads);
 void start_simulation_serial(int sim_time,int n,int* infection_counter,person* people,int** matr);
@@ -359,10 +363,48 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
 }
 
 
-// void omp_v1(int sim_time,int n,int* infection_counter,person* people,int** matr)
-// {
-//     //
-// }
+void omp_v1(int sim_time,int n,int* infection_counter,person* people,int** matr)
+{
+    //this version is basically the same thing as the serial version but you add parallel for's before moving checking and updating each person.
+    while(sim_time>0) 
+    {
+        //move
+        #pragma omp parallel for schedule(dynamic,CHUNK_SIZE)
+        for (int i=0;i<n;i++) 
+        {
+            move_person(&people[i],matr);
+        }
+
+        //check
+        #pragma omp parallel for schedule(dynamic,CHUNK_SIZE)
+        for (int i=0;i<n;i++)
+        {
+            check_for_infections(people,n,&people[i]);
+        }
+
+        //update
+        #pragma omp parallel for schedule(dynamic,CHUNK_SIZE)
+        for (int i=0;i<n;i++)
+        {
+            update_infections(people,n,infection_counter,&people[i]);
+        }
+
+        
+        if(choice==1)
+        {
+            write_vars_to_file(people,f_pragma_v1);
+            fprintf(f_pragma_v1,"\n");
+        }
+
+        //decrease sim time
+        sim_time--;
+    }
+    if(choice==0)
+    {
+        write_vars_to_file(people,f_pragma_v1);
+        fprintf(f_pragma_v1,"\n");
+    }
+}
 
 void copy_vector(int* infection_counter_serial,int* infection_counter)
 {
@@ -404,11 +446,11 @@ void write_vars_to_file(person* people,FILE* out)
         char* status;
         if(tmp==0)
         {
-            status="Infected (1)";
+            status="Infected (0)";
         }
         if(tmp==1)
         {
-            status="Susceptible (0)";
+            status="Susceptible (1)";
         }
         if(tmp>1)
         {
@@ -620,12 +662,20 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     results_file=strtok(results_file,".txt");
     strcat(results_file,"_results.txt");
     
+    char* path_pragma1=(char*)malloc(sizeof(char) * (strlen(file_name)+10));
+    // f_omp1_out.txt
+    strcpy(path_pragma1,file_name);
+    path_pragma1=strtok(path_pragma1,".txt");
+    strcat(path_pragma1,"_omp1_out.txt");
+
+
 
     // printf("\n\n\n\nFILE PATH\n%s %s\n",path_serial,path_parallel);
 
     f2 = fopen(path_serial,"w");
     f3 = fopen(path_parallel,"w");
     FILE* f4=fopen(results_file,"w");
+    f_pragma_v1=fopen(path_pragma1,"w");
 
     fprintf(f4,"nr simulations:%d\nnr threads:%d\n",sim_time,nr_threads);
     //serial
@@ -691,6 +741,27 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     // write_vars_to_file(people,f3);
 
     check_results(people_serial,matr_serial,infection_counter_serial);
+
+    //reset values for omp v1
+    copy_people(people,people_reset);
+    copy_matrix(matr,matr_reset);
+
+    for(int i=0;i<N;i++)
+    {
+        infection_counter[i]=0;
+    }
+
+    omp_v1(sim_time,N,infection_counter,people,matr);
+
+    //reset values for omp v2
+    copy_people(people,people_reset);
+    copy_matrix(matr,matr_reset);
+
+    for(int i=0;i<N;i++)
+    {
+        infection_counter[i]=0;
+    }
+
 
     for(int i=0;i<rows;i++)
     {
