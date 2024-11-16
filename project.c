@@ -44,12 +44,14 @@ pthread_barrier_t barrier_update;
 void initialize(char* total_sim_time,char* file_name,char* nr_threads);
 void start_simulation_serial(int sim_time,int n,int* infection_counter,person* people,int** matr);
 void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,person* people,int** matr);
+void omp_v1(int sim_time,int N,int* infection_counter,person* people,int** matr);
 void move_person(person* p,int** matr);
 void print_people(person* people,int n,int* infection_counter);
 void copy_vector(int* infection_counter_serial,int* infection_counter);
 void copy_people(person* people_serial,person* people);
 void copy_matrix(int** matr_serial,int** matr);
 void write_vars_to_file(person* people,FILE* out);
+
 
 int main(int argc,char* argv[])
 {
@@ -185,33 +187,28 @@ void check_for_infections(person* people,int n,person* p)
     }   
 }
 
-void update_infections(person* people, int n,int* infection_counter) {
-    for (int i = 0; i < n; i++) 
-    {
-        if(people[i].init_status==0)
+void update_infections(person* people, int n,int* infection_counter,person* p) {
+        if(p->init_status==0)
         {
-            infection_counter[people[i].id-1]++;
+            infection_counter[p->id-1]++;
         }
         //infected. check if its value is also bigger than the infected duration
-        if(people[i].init_status<=0 && people[i].init_status>-INFECTED_DURATION)
+        if(p->init_status<=0 && p->init_status>-INFECTED_DURATION)
         {
-            people[i].init_status--;
+            p->init_status--;
         }
             
-        else if(people[i].init_status==-INFECTED_DURATION)
+        else if(p->init_status==-INFECTED_DURATION)
         {
             //finished being infected; make person immune now.
             //1 is hardcoded here because we have two base cases. Either "0" as infected or "1" as susceptible. When we reach "1" we know that the person has finished being immune and is now susceptible again
-            people[i].init_status=1+IMMUNE_DURATION;
+            p->init_status=1+IMMUNE_DURATION;
         }
-        else if(people[i].init_status>1)
+        else if(p->init_status>1)
         {
-            people[i].init_status--;
+            p->init_status--;
         }
         //if people[i] didn't go through any of the ifs, that means that the person is susceptible (1) value ; nothing needs to be changed in this case.
-        
-
-    }
 }
 
 
@@ -230,7 +227,8 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
         {
             check_for_infections(people,n,&people[i]);
         }
-        update_infections(people,n,infection_counter);
+        for(int i=0;i<n;i++)
+            update_infections(people,n,infection_counter,&people[i]);
         // print_matrix(matr);
         // print_people(people,n,infection_counter);
         if(choice==1)
@@ -286,11 +284,10 @@ void *simulate(void* t) {
         pthread_barrier_wait(&barrier_check);
 
 
-        //update infections
-        //since we are updating the infections for all of the people in the structure array, let only one of the threads update the infections. Don't update the infections for every thread, 
-        //every time a thread is executed. You need to update the infections of every person only once.
-        if(my_thread->id==0)
-            update_infections(people,N,infection_counter);
+        for (int i=my_thread->first;i<=my_thread->last;i++) 
+        {
+            update_infections(people, N, infection_counter ,&people[i]);
+        }
         // printf("Thread %d waiting at barrier update\n",my_thread->id);
         pthread_barrier_wait(&barrier_update);
 
@@ -370,6 +367,12 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     // free(threads);
     // pthread_exit(NULL);
 }
+
+
+// void omp_v1(int sim_time,int n,int* infection_counter,person* people,int** matr)
+// {
+//     //
+// }
 
 void copy_vector(int* infection_counter_serial,int* infection_counter)
 {
