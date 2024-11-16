@@ -389,20 +389,88 @@ void omp_v1(int sim_time,int n,int* infection_counter,person* people,int** matr)
             update_infections(people,n,infection_counter,&people[i]);
         }
 
-        
-        if(choice==1)
+        //here you have it as critical since you want only one thread to write the values to the file, and while writing those values to the file, you don't want any thread to access and also write
+        //to that file as the thread is executing.
+        #pragma omp critical
         {
-            write_vars_to_file(people,f_pragma_v1);
-            fprintf(f_pragma_v1,"\n");
+            if(choice==1)
+            {
+                write_vars_to_file(people,f_pragma_v1);
+                fprintf(f_pragma_v1,"\n");
+            }
         }
-
-        //decrease sim time
-        sim_time--;
+        
+        #pragma omp critical
+        {
+            //decrease sim time
+            sim_time--;
+        }
+        
     }
     if(choice==0)
     {
         write_vars_to_file(people,f_pragma_v1);
         fprintf(f_pragma_v1,"\n");
+    }
+}
+
+void omp_v2(int sim_time, int n, int* infection_counter, person* people, int** matr)
+{
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            while (sim_time>0)
+            {
+                //move
+                for (int i=0;i<n;i++)
+                {
+                    #pragma omp task firstprivate(i)
+                    move_person(&people[i], matr);
+                }
+                #pragma omp taskwait  
+                //check
+                for (int i=0;i<n;i++)
+                {
+                    #pragma omp task firstprivate(i)
+                    check_for_infections(people, n, &people[i]);
+                }
+                #pragma omp taskwait  
+
+                //update
+                for (int i=0;i<n;i++)
+                {
+                    #pragma omp task firstprivate(i)
+                    update_infections(people, n, infection_counter, &people[i]);
+                }
+                #pragma omp taskwait  
+
+                //if debug 1, write to file.
+                if (choice==1)
+                {
+                    #pragma omp task
+                    {
+                        
+                        #pragma omp critical
+                        {
+                            write_vars_to_file(people, f_pragma_v2);
+                            fprintf(f_pragma_v2, "\n");
+                        }
+                    }
+                }
+                #pragma omp critical
+                {
+                    sim_time--;
+                }
+                
+            }
+        }
+    }
+
+    if (choice==0)
+    {
+        write_vars_to_file(people, f_pragma_v2);
+        fprintf(f_pragma_v2, "\n");
     }
 }
 
@@ -488,8 +556,6 @@ int check_results_people(person* people_serial)
     return result;
 }
 
-
-
 int check_results_infection(int* infection_counter_serial)
 {
     int result=1;
@@ -504,7 +570,7 @@ int check_results_infection(int* infection_counter_serial)
     return result;
 }
 
-void check_results(person* people_serial,int** matr_serial,int* infection_counter_serial)
+void check_results(person* people_serial,int** matr_serial,int* infection_counter_serial,int val)
 {
     //NOTE: Here you only check for the people and the infections. You don't check for the matrix also since for higher number of threads, the results will most likely differ.
     //At the end, you will have some people that will be at the same position lets say a person with id nr 1, nr 6 and nr 7. In the serial version, the person there will be for example the person
@@ -512,7 +578,12 @@ void check_results(person* people_serial,int** matr_serial,int* infection_counte
     //people in the people array will only be accounted for in terms of coordinates.
     if(check_results_people(people_serial) && check_results_infection(infection_counter_serial))
     {
-        printf("Values in serial and parallel are the same.\n");
+        if(val==1)
+            printf("Values in serial and parallel are the same.\n");
+        else
+        {
+            printf("Values in omp1 and omp2 are the same.\n");
+        }
     }
 }
 
@@ -668,6 +739,12 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     path_pragma1=strtok(path_pragma1,".txt");
     strcat(path_pragma1,"_omp1_out.txt");
 
+    char* path_pragma2=(char*)malloc(sizeof(char) * (strlen(file_name)+10));
+    // f_omp2_out.txt
+    strcpy(path_pragma2,file_name);
+    path_pragma2=strtok(path_pragma2,".txt");
+    strcat(path_pragma2,"_omp2_out.txt");
+
 
 
     // printf("\n\n\n\nFILE PATH\n%s %s\n",path_serial,path_parallel);
@@ -676,6 +753,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     f3 = fopen(path_parallel,"w");
     FILE* f4=fopen(results_file,"w");
     f_pragma_v1=fopen(path_pragma1,"w");
+    f_pragma_v2=fopen(path_pragma2,"w");
 
     fprintf(f4,"nr simulations:%d\nnr threads:%d\n",sim_time,nr_threads);
     //serial
@@ -740,7 +818,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     // write_vars_to_file(people,f3);
 
-    check_results(people_serial,matr_serial,infection_counter_serial);
+    check_results(people_serial,matr_serial,infection_counter_serial,1);
 
     //reset values for omp v1
     copy_people(people,people_reset);
@@ -753,6 +831,10 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     omp_v1(sim_time,N,infection_counter,people,matr);
 
+    copy_vector(infection_counter_serial,infection_counter);    
+    copy_matrix(matr_serial,matr);
+    copy_people(people_serial,people);
+
     //reset values for omp v2
     copy_people(people,people_reset);
     copy_matrix(matr,matr_reset);
@@ -762,11 +844,15 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         infection_counter[i]=0;
     }
 
+    omp_v2(sim_time,N,infection_counter,people,matr);
 
     for(int i=0;i<rows;i++)
     {
         free(matr[i]);
     }
+
+    check_results(people_serial,matr_serial,infection_counter_serial,2);
+
     free(matr);
     free(people);
     free(infection_counter);
