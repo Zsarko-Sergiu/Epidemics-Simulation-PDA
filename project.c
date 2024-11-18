@@ -33,7 +33,8 @@ int choice;
 
 //time structures
 struct timespec start,finish;
-double elapsed,Tserial,Tparallel;
+struct timespec start_output,finish_output;
+double elapsed,Tserial,Tparallel,elapsed_output,T_omp_v1,T_omp_v2;
 
 //barriers for synch
 pthread_barrier_t barrier_move;
@@ -42,7 +43,7 @@ pthread_barrier_t barrier_update;
 
 #define INFECTED_DURATION 2
 #define IMMUNE_DURATION 11
-#define CHUNK_SIZE 20
+#define CHUNK_SIZE 1000
 
 void initialize(char* total_sim_time,char* file_name,char* nr_threads);
 void start_simulation_serial(int sim_time,int n,int* infection_counter,person* people,int** matr);
@@ -242,10 +243,14 @@ void start_simulation_serial(int sim_time,int n,int* infection_counter,person* p
         
         sim_time--;
     }
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if(choice==0)
     {
         write_vars_to_file(people,f2);
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
     // printf("\nFinished simulation\n");
     // print_matrix(matr);
     // print_people(people,n,infection_counter);
@@ -343,11 +348,14 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
     {
         pthread_join(threads[i],NULL);
     }
-
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if(choice==0)
     {
         write_vars_to_file(people,f3);
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
     // printf("\nFinished simulation\n");
     // print_matrix(matr);
     // print_people(people,N,infection_counter);
@@ -407,11 +415,15 @@ void omp_v1(int sim_time,int n,int* infection_counter,person* people,int** matr)
         }
         
     }
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if(choice==0)
     {
         write_vars_to_file(people,f_pragma_v1);
         fprintf(f_pragma_v1,"\n");
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
 }
 
 void omp_v2(int sim_time, int n, int* infection_counter, person* people, int** matr)
@@ -466,12 +478,15 @@ void omp_v2(int sim_time, int n, int* infection_counter, person* people, int** m
             }
         }
     }
-
+    clock_gettime(CLOCK_MONOTONIC,&start_output);
     if (choice==0)
     {
         write_vars_to_file(people, f_pragma_v2);
         fprintf(f_pragma_v2, "\n");
     }
+    clock_gettime(CLOCK_MONOTONIC,&finish_output);
+    elapsed_output=(finish_output.tv_sec-start_output.tv_sec);
+    elapsed_output+=(finish_output.tv_nsec-start_output.tv_nsec)/pow(10,9);
 }
 
 void copy_vector(int* infection_counter_serial,int* infection_counter)
@@ -732,6 +747,11 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     strcpy(results_file,file_name);
     results_file=strtok(results_file,".txt");
     strcat(results_file,"_results.txt");
+
+    char* results_file_omp=(char*)malloc(sizeof(char)*(strlen(file_name)+13));
+    strcpy(results_file_omp,file_name);
+    results_file_omp=strtok(results_file_omp,".txt");
+    strcat(results_file_omp,"_results_omp.txt");
     
     char* path_pragma1=(char*)malloc(sizeof(char) * (strlen(file_name)+10));
     // f_omp1_out.txt
@@ -754,8 +774,10 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
     FILE* f4=fopen(results_file,"w");
     f_pragma_v1=fopen(path_pragma1,"w");
     f_pragma_v2=fopen(path_pragma2,"w");
+    FILE* f_pragma_results=fopen(results_file_omp,"w");
 
     fprintf(f4,"nr simulations:%d\nnr threads:%d\n",sim_time,nr_threads);
+    fprintf(f_pragma_results,"nr simulations:%d\nnr threads:%d\n",sim_time,nr_threads);
     //serial
     //start:
     clock_gettime(CLOCK_MONOTONIC,&start);
@@ -764,12 +786,8 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
-    Tserial=elapsed;
+    Tserial=elapsed-elapsed_output;
     fprintf(f4,"SERIAL:%lf\n",Tserial);
-
-    
-
-
 
     //store the values for matr,infection counter and people somewhere and reset the values to work on the parallel version.
     
@@ -779,11 +797,6 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         
         copy_people(people_serial,people);
         
-    // write_vars_to_file(people_serial,f2);
-    // printf("%d\n",matr_serial[0][0]);
-    // print_matrix(matr_serial);
-    // print_people(people_serial,N,infection_counter_serial);
-
     //reset the values in matr,people and infection_counter
 
     copy_people(people,people_reset);
@@ -794,7 +807,7 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         infection_counter[i]=0;
     }
 
-    // print_matrix(matr);
+    
 
     //can finally start simulation for parallel.
 
@@ -804,19 +817,13 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
 
     elapsed=(finish.tv_sec-start.tv_sec);
     elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
-    Tparallel=elapsed;
-    fprintf(f4,"PARALLEL:%lf\n",elapsed);
+    Tparallel=elapsed-elapsed_output;
+    fprintf(f4,"PARALLEL:%lf\n",Tparallel);
 
     double efficiency1=Tserial/(nr_threads*Tparallel);
     double speedup1=efficiency1*nr_threads;
 
     fprintf(f4,"Efficiency: %lf\nSpeedup: %lf\n",efficiency1,speedup1);
-
-    // print_matrix(matr);
-    // printf("%d\n",matr[0][0]);
-    // print_people(people,N,infection_counter);
-
-    // write_vars_to_file(people,f3);
 
     check_results(people_serial,matr_serial,infection_counter_serial,1);
 
@@ -829,7 +836,13 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         infection_counter[i]=0;
     }
 
+    clock_gettime(CLOCK_MONOTONIC,&start);
     omp_v1(sim_time,N,infection_counter,people,matr);
+    clock_gettime(CLOCK_MONOTONIC,&finish);
+
+    elapsed=(finish.tv_sec-start.tv_sec);
+    elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
+    T_omp_v1=elapsed-elapsed_output;
 
     copy_vector(infection_counter_serial,infection_counter);    
     copy_matrix(matr_serial,matr);
@@ -844,7 +857,23 @@ void initialize(char* total_sim_time,char* file_name,char* nr_threads_str)
         infection_counter[i]=0;
     }
 
+    clock_gettime(CLOCK_MONOTONIC,&start);
     omp_v2(sim_time,N,infection_counter,people,matr);
+    clock_gettime(CLOCK_MONOTONIC,&finish);
+
+    elapsed=(finish.tv_sec-start.tv_sec);
+    elapsed+=(finish.tv_nsec-start.tv_nsec)/pow(10,9);
+    T_omp_v2=elapsed-elapsed_output;
+
+    efficiency1=Tserial/(nr_threads*T_omp_v1);
+    speedup1=efficiency1*nr_threads;
+
+    fprintf(f_pragma_results,"\nSERIAL:%lf\nOMP V1:%lf\nEFFICIENCY:%lf\nSPEEDUP:%lf\n",Tserial,T_omp_v1,efficiency1,speedup1);
+
+    efficiency1=Tserial/(nr_threads*T_omp_v2);
+    speedup1=efficiency1*nr_threads;
+
+    fprintf(f_pragma_results,"\nSERIAL:%lf\nOMP V2:%lf\nEFFICIENCY:%lf\nSPEEDUP:%lf\n",Tserial,T_omp_v2,efficiency1,speedup1);
 
     for(int i=0;i<rows;i++)
     {
