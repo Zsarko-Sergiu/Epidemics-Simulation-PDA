@@ -373,25 +373,26 @@ void start_simulation_parallel(int total_sim_time,int N,int *infection_counter,p
 
 void omp_v1(int sim_time,int n,int* infection_counter,person* people,int** matr)
 {
+    omp_set_num_threads(nr_threads);
     //this version is basically the same thing as the serial version but you add parallel for's before moving checking and updating each person.
     while(sim_time>0) 
     {
         //move
-        #pragma omp parallel for schedule(dynamic,CHUNK_SIZE)
+        #pragma omp parallel for schedule(static,CHUNK_SIZE)
         for (int i=0;i<n;i++) 
         {
             move_person(&people[i],matr);
         }
 
         //check
-        #pragma omp parallel for schedule(dynamic,CHUNK_SIZE)
+        #pragma omp parallel for schedule(static,CHUNK_SIZE)
         for (int i=0;i<n;i++)
         {
             check_for_infections(people,n,&people[i]);
         }
 
         //update
-        #pragma omp parallel for schedule(dynamic,CHUNK_SIZE)
+        #pragma omp parallel for schedule(static,CHUNK_SIZE)
         for (int i=0;i<n;i++)
         {
             update_infections(people,n,infection_counter,&people[i]);
@@ -428,6 +429,7 @@ void omp_v1(int sim_time,int n,int* infection_counter,person* people,int** matr)
 
 void omp_v2(int sim_time, int n, int* infection_counter, person* people, int** matr)
 {
+    omp_set_num_threads(nr_threads);
     #pragma omp parallel
     {
         #pragma omp single
